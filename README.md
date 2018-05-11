@@ -1,2 +1,2 @@
-# WHOIS_TREE
-WHOIS TREE ( Dns requests tree ) 
+# DIG_TREE
+DIG TREE ( Dns requests tree ) 
