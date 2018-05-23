@@ -1,56 +1,38 @@
-import dns
-import dns.name
-import dns.query
 import dns.resolver
+import sys
 
+res = dns.resolver.Resolver()
 
-def get_authoritative_nameserver(domain, log=lambda msg: None):
-    n = dns.name.from_text(domain)
+def get_domain_from_url(url):
+    exts = ['co', 'net', 'org', 'ac']
+    dots_list = str(url).split('.')
+    if dots_list[-3] in exts:
+        return dots_list[-4] + "." + dots_list[-3] + "." + dots_list[-2]
+    return dots_list[-3] + "." + dots_list[-2]
 
-    depth = 2
-    default = dns.resolver.get_default_resolver()
-    nameserver = default.nameservers[0]
+def get_nameservers(domain):
+    servers_arr = []
+    for server in res.query(domain, 'NS'):
+        servers_arr.append(get_domain_from_url(server.target))
+    return set(servers_arr)
 
-    last = False
-    while not last:
-        s = n.split(depth)
+queue = []
 
-        last = s[0].to_unicode() == u'@'
-        sub = s[1]
+domain = sys.argv[1] + "." # for our parsing
+queue.append(get_domain_from_url(domain))
+ns_ans = {}
 
-        log('Looking up %s on %s' % (sub, nameserver))
-        query = dns.message.make_query(sub, dns.rdatatype.NS)
-        response = dns.query.udp(query, nameserver)
+while len(queue) > 0:
+    this_domain = queue.pop()
 
-        rcode = response.rcode()
-        if rcode != dns.rcode.NOERROR:
-            if rcode == dns.rcode.NXDOMAIN:
-                raise Exception('%s does not exist.' % sub)
-            else:
-                raise Exception('Error %s' % dns.rcode.to_text(rcode))
+    ns_ans[this_domain] = {'children': [], 'color': 'green'} # starts as in-bailiwick
 
-        rrset = None
-        if len(response.authority) > 0:
-            rrset = response.authority[0]
-        else:
-            rrset = response.answer[0]
+    for server in get_nameservers(this_domain):
+        if server not in ns_ans:
+            queue.append(server)
 
-        rr = rrset[0]
-        if rr.rdtype == dns.rdatatype.SOA:
-            log('Same server is authoritative for %s' % sub)
-        else:
-            authority = rr.target
-            log('%s is authoritative for %s' % (authority, sub))
-            nameserver = default.query(authority).rrset[0].to_text()
+        if server != this_domain:
+            ns_ans[this_domain]['children'].append(server)
+            ns_ans[this_domain]['color'] = 'red' # out-of-bailiwick
 
-        depth += 1
-
-    return nameserver
-
-
-def log(msg):
-    print msg
-
-
-print get_authoritative_nameserver("www.facebook.com", log)
-
+print ns_ans
